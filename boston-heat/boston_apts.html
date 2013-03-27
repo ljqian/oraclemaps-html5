@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <TITLE>Boston Apartment Price Heat Map</TITLE>
+        <script language="JavaScript" src="../api/oraclemapsv2.js"></script>
+        <script language=javascript>
+            var map;
+            var pointsLayer, heatLayer;
+            var colors;
+            var baseURL  = "";
+            var max = 2200, min = 300;
+            
+            $(document).ready(function()
+            {
+                OM.gv.setResourcePath("../api/images");
+                
+                var center = new OM.geometry.Point(-71.079311590576168, 42.345393812066433); 
+                map = new OM.Map(document.getElementById('map'),
+                {mapviewerURL: baseURL}) ;
+                map.addLayer(new OM.layer.ElocationTileLayer("background") ) ;  
+                map.setMapCenter( center );
+                map.setMapZoomLevel(12) ;
+                map.init();
+                colors = ["#0000ff","#002bff","#0056ff","#007fff","#00abff","#00d5ff","#00ffff","#00ff7f","#00ff00","#7fff00","#ffff00","#ffd500","#ffab00","#ff7f00","#ff5600","#ff2b00", "#ff0000"];
+               // colors = ["#0000ff","#0056ff","#00d5ff","#00ff00","#ffff00","#ff7f00", "#ff0000"];
+                var heatStyle = new OM.style.HeatMap({
+                    spotlightRadius:1.15,//0.8,
+                    lengthUnit:"kilometer",
+                    colorStops: colors,
+                    opacity:0.6,
+                    maxValue:max,
+                    minValue:min
+                });
+          
+                heatLayer = new OM.layer.VectorLayer("vector1",{
+                    def:
+                        {
+                        type: OM.layer.VectorLayer.TYPE_DATAPACK,
+                        url: "boston_apts.json"
+                    },
+                    renderingStyle : heatStyle,
+                    styleAttributes:["unit_price"]
+                });
+
+                map.addLayer(heatLayer);           
+                
+                var marker = new OM.style.Marker({src:"BALL_sel.png", width:7, height:7});                
+                pointsLayer = new OM.layer.VectorLayer("vector2",{
+                    def:
+                        {
+                        type: OM.layer.VectorLayer.TYPE_DATAPACK,
+                        url: "boston_apts.json"
+                    },
+                    renderingStyle : marker
+                });
+                
+                map.addLayer(pointsLayer);
+                
+                showLegend();
+  
+            })
+ 
+            function showLegend()
+            {
+                var str = "<table style='width:150px'>", maxValue, minValue;
+                str += "<tr><td><div style='width:15px;height:15px;background-color:"+colors[colors.length-1]+"'/></td><td>"+max+" or more </td></tr>";
+                for(var i=colors.length; i>2; i--)
+                {
+                  maxValue = max - (colors.length-i)*100;
+                  minValue = maxValue-100;
+                  str += "<tr><td><div style='width:15px;height:15px;background-color:"+colors[i-2]+"'/></td><td>"+minValue+"--"+maxValue+"</td></tr>"
+                }
+                str += "<tr><td><div style='width:15px;height:15px;background-color:"+colors[0]+"'/></td><td> "+min+"--"+minValue+"</td></tr>";
+
+                str += "</table>";
+                var dec = new OM.control.MapDecoration(str,{offsetX:10, offsetY:10, draggable:false});
+                map.addMapDecoration(dec);              
+            }
+           
+        </script>
+    </head>
+
+    <body>
+        <h3> Heat Map for Boston Apartment Rent Price as of Jan 2013 </h3>      
+        <div id="map" style="width:95%; height:85%"></div> <br>
+        <INPUT TYPE="checkbox" value="pointsLayer" onclick="pointsLayer.setVisible(!pointsLayer.isVisible())" checked/> <b> Toggle apartment locations </b> 
+    </body>
+</html>

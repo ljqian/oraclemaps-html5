@@ -1,0 +1,589 @@
+
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>Oracle Maps HTML5 Demo</title>
+
+<script src="/mvdemo/gv.js" type="text/javascript"></script>
+<script>
+  document.write('<'+'script src="'+MV.gv.mapviewer_baseURL+'/jslib/v2/oraclemapsv2.js"'+' type="text/javascript"><'+'/script>');
+</script>
+<!-- oraclemaps.js has to be loaded before ddslick due to jquery. 
+ --  The ddslick code does not work if it is loaded before oraclemaps
+ -->
+ <!-- assume jQuery is in oraclemaps.js already 
+<script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
+-->
+
+<!-- test without ddslick -->
+<script type="text/javascript" src="jquery.ddslick.min.js"></script>
+
+<!-- override some default CSS settings for ddslick -->
+<style type="text/css">
+.dd-option-image, .dd-selected-image {vertical-align:bottom; float:left; margin-right:5px; max-width:150px;}
+.dd-selected {overflow:hidden; display:block; padding:4px; font-weight:bold;}
+</style>
+<script type="text/javascript">
+//var $j = jQuery.noConflict();
+OM.gv.proxyEnabled =false;
+OM.gv.setResourcePath(MV.gv.mapviewer_baseURL+"/jslib/v2/images/");
+$(document).ready( function()
+{
+     $('#demo-htmlselect').ddslick({
+	            width: "220px",
+				background: "#cccccc",
+				selectText: "Select color palette",
+                onSelected: function () {
+                    var ddData = $('#demo-htmlselect').data('ddslick');
+                    displaySelectedData(ddData);
+					}
+                });
+
+	// uncomment when done testing ddslick by itself		
+      initMap();
+      states();	  
+	  
+}
+);
+
+var map = null;
+var statesLayer = null, countiesLayer=null;
+var stateCountyLayer = null;
+var layerName="States";
+var baseURL = MV.gv.mapviewer_baseURL;
+var mapCenterLon = -20000;
+var mapCenterLat =  1750000;
+var mapZoom      =  2;  
+var mpoint = new OM.geometry.Point(mapCenterLon,mapCenterLat,32775);
+var currentPalette = null, currentStyle=null;
+
+var bucketRanges = {
+"States3" : { buckets:3,
+                    ranges: [
+                       {lo:0, hi:1722850},
+                       {lo:1722850, hi:4866692},
+                       {lo:4866692, hi:500000000}
+                    ]
+                 },
+"States5" : { buckets:5, 
+                   ranges: [
+                        {lo:0, hi:1006749},
+                        {lo:1006749, hi:2573216},
+                        {lo:2573216, hi:4219972},
+                        {lo:4219972, hi:6478216},
+                        {lo:6478216, hi:500000000}
+                    ]
+                 },
+"Counties3" : { buckets:3,
+                      ranges:[
+                        {lo:0, hi:12823},
+                        {lo:12823, hi:36882},
+                        {lo:36882, hi:50000000}
+                      ]
+                     },
+"Counties5" : { buckets:5,
+                       ranges: [
+                                     {lo:0, hi:10000},
+                                     {lo:10000, hi:25000},
+                                     {lo:25000, hi:60000},
+                                     {lo:60000, hi:100000},
+                                     {lo:100000, hi:50000000}
+                       ]
+                    }
+};
+
+/**
+ * color series from ColorBrewer site (http://colorbrewer2.org/).
+ */
+
+var colorSeries = {
+  
+//multi-hue color scheme #10 YlBl.
+  
+"YlBl3": {   classes:3,
+                 imgFileName:"mh10_3.png",
+                 fill: [0xEDF8B1, 0x7FCDBB, 0x2C7FB8],
+                 stroke:[0xB5DF9F, 0x72B8A8, 0x2872A6],
+                 limit:[0xFAFDE8, 0xD9F0EB, 0xC0D9EA]
+  },
+  
+"YlBl5": {   classes:5,
+                 imgFileName:"mh10_5.png",
+                 fill:[0xFFFFCC, 0xA1DAB4, 0x41B6C4, 0x2C7FB8, 0x253494],
+                 stroke:[0xE6E6B8, 0x91BCA2, 0x3AA4B0, 0x2872A6, 0x212F85],
+                 limit:[0xFFFFEB, 0xE3F1E8, 0xD9F0F3, 0xC0D9EA, 0xBEC2DF]
+  },
+  
+//multi-hue color scheme #11 YlBr.
+ 
+ "YlBr3": {classes:3,
+                 imgFileName:"mh11_3.png",
+                  fill:[0xFFF7BC, 0xFEC44F, 0xD95F0E],
+                 stroke:[0xE6DEA9, 0xE5B047, 0xC5360D],
+                 limit:[0xFFFDEB, 0xFFEDCA, 0xF4CFB7]
+  
+  },
+  
+"YlBr5": {classes:5,
+                 imgFileName:"mh11_5.png",
+                 fill:[0xFFFFD4, 0xFED98E, 0xFE9929, 0xD95F0E, 0x993404],
+                 stroke:[0xE6E6BF, 0xE5C380, 0xE58A25, 0xC35663, 0x8A2F04],
+                 limit:[0xFFFFF2, 0xFFF4DD, 0xFFE0BF, 0xF0BFC5, 0xE0C2B4]
+    },
+// single-hue color schemes (blues, greens, greys, oranges, reds, purples)
+"Purples5": {classes:5,
+                 imgFileName:"mh11_5.png",
+                 fill:[0xf2f0f7, 0xcbc9e2, 0x9e9ac8, 0x756bb1, 0x54278f],
+                 stroke:[0xd3d3d3, 0xd3d3d3, 0xd3d3d3, 0xd3d3d3, 0xd3d3d3],
+                 limit:[0xFFFFF2, 0xFFF4DD, 0xFFE0BF, 0xF0BFC5, 0xE0C2B4]
+    },
+"Blues5": {classes:5,
+                 imgFileName:"mh11_5.png",
+                 fill:[0xEFF3FF, 0xbdd7e7, 0x68aed6, 0x3182bd, 0x18519C],
+                 stroke:[0xd3d3d3, 0xd3d3d3, 0xd3d3d3, 0xd3d3d3, 0xd3d3d3],
+                 limit:[0xFFFFF2, 0xFFF4DD, 0xFFE0BF, 0xF0BFC5, 0xE0C2B4]
+    },
+"Greens5": {classes:5,
+                 imgFileName:"mh11_5.png",
+                 fill:[0xedf8e9, 0xbae4b3, 0x74c476, 0x31a354, 0x116d2c],
+                 stroke:[0xd3d3d3, 0xd3d3d3, 0xd3d3d3, 0xd3d3d3, 0xd3d3d3],
+                 limit:[0xFFFFF2, 0xFFF4DD, 0xFFE0BF, 0xF0BFC5, 0xE0C2B4]
+    },  
+"Greys5": {classes:5,
+                 imgFileName:"mh11_5.png",
+                 fill:[0xf7f7f7, 0xcccccc, 0x969696, 0x636363, 0x454545],
+                 stroke:[0xd3d3d3, 0xd3d3d3, 0xd3d3d3, 0xd3d3d3, 0xd3d3d3],
+                 limit:[0xFFFFF2, 0xFFF4DD, 0xFFE0BF, 0xF0BFC5, 0xE0C2B4]
+    },
+"Oranges5": {classes:5,
+                 imgFileName:"mh11_5.png",
+                 fill:[0xfeedde, 0xfdb385, 0xfd8d3c, 0xe6550d, 0xa63603],
+                 stroke:[0xd3d3d3, 0xd3d3d3, 0xd3d3d3, 0xd3d3d3, 0xd3d3d3],
+                 limit:[0xFFFFF2, 0xFFF4DD, 0xFFE0BF, 0xF0BFC5, 0xE0C2B4]
+    },
+"Reds5": {classes:5,
+                 imgFileName:"mh11_5.png",
+                 fill:[0xfee5d9, 0xfcae91, 0xfb6a4a, 0xde2d26, 0xa50f15],
+                 stroke:[0xd3d3d3, 0xd3d3d3, 0xd3d3d3, 0xd3d3d3, 0xd3d3d3],
+                 limit:[0xFFFFF2, 0xFFF4DD, 0xFFE0BF, 0xF0BFC5, 0xE0C2B4]
+    }
+};
+
+function createBucketColorStyle(
+colorName, colorSeries, rangeName, bucketRanges, useGradient)
+{
+   var theBucketStyle;
+   var bucketStyleDef;
+   var theBuckets = [];
+   var theStyles = [];
+   var theColors = [];
+   var aBucket, aStyle, aColor, aRange;
+   var numClasses ;
+
+   numClasses = colorSeries[colorName].classes;
+
+  // create buckets
+   for (var i=0; i < numClasses; i++) 
+   {
+            aBucket = new OM.style.RangedBucket(
+            {low:bucketRanges[rangeName].ranges[i].lo, 
+              high:bucketRanges[rangeName].ranges[i].hi});
+
+            theBuckets.push(aBucket);
+      
+   };
+   // create Styles
+   for (var i=0; i < numClasses; i++) 
+   {
+      /* gradient stuff doesn't work too well
+      if (useGradient) 
+      {
+        theStyles[i] = new OM.style.LinearGradient(
+        {
+         stops: [{offset: 0, color:"#41b6c4"},
+                 {offset: 1, color:"#253494"}],
+         x1: 0,
+         y1: 0,
+         x2: 1,
+         y2: 1,
+         stroke:colorSeries[colorName].stroke[i],
+         fillOpacity: 1,
+         strokeOpacity: 1}
+        ); 
+      }
+      else
+      {
+        theStyles[i] = new OM.style.ColorStyle(
+                     {fill: colorSeries[colorName].fill[i], 
+                       stroke:colorSeries[colorName].stroke[i]
+                     });
+      }
+      */
+        theStyles[i] = new OM.style.Color(
+                     {fill: colorSeries[colorName].fill[i], 
+                       stroke:colorSeries[colorName].stroke[i],
+                      strokeOpacity: useGradient? 0.25 : 1
+                     });
+   };
+
+   bucketStyleDef = {
+      numClasses : colorSeries[colorName].classes,
+      classification: 'custom',  //since we are supplying all the buckets
+      buckets: theBuckets,
+      styles: theStyles,
+      gradient:  useGradient? 'linear' : 'off'
+//      gradient:  useGradient? 'radial' : 'off'
+    };
+
+
+   theBucketStyle = new OM.style.BucketStyle(bucketStyleDef);
+
+
+   return theBucketStyle;
+}
+
+function initMap()
+{
+  //alert("Initialize map view");
+  
+     var uni= new OM.universe.Universe(
+	{
+		srid : 32775,
+		bounds : new OM.geometry.Rectangle(
+                        -3280000, 170000, 2300000, 3200000, 32775),
+		numberOfZoomLevels: 16
+	});
+  map = new OM.Map(
+    	document.getElementById('map'),
+    	{
+          mapviewerURL: baseURL,
+    	  universe:uni
+    	}) ;
+        
+  var navigationPanelBar = new OM.control.NavigationPanelBar();
+  //navigationPanelBar.setStyle({backgroundColor:"#FFFFFF",buttonColor:"#008000",size:12});
+  map.addMapDecoration(navigationPanelBar);
+  //map.setOverMapOption({display:false});
+} // end initMap
+
+function states()
+{
+  //alert("Load and display states");
+     layerName = "States";
+     
+     if(statesLayer) 
+     { 
+       if(countiesLayer) 
+         countiesLayer.setVisible(false);
+       // states where already visible with a white outline
+       // set the style to the currently selected one
+       //  statesLayer.setVisible(true);
+       var theDDdata = $('#demo-htmlselect').data('ddslick');
+       setStyle(theDDdata.selectedData.value); 
+     }
+     else 
+     {
+     
+     var  layer2 = new OM.layer.VectorLayer("vLayer2", 
+        {
+          def:
+          {
+      	  type:OM.layer.VectorLayer.TYPE_PREDEFINED, 
+       	  dataSource:"mvdemo", theme:"us_states_bi", 
+        	  url: baseURL,
+       	  loadOnDemand: false
+  	    },
+		boundingTheme:true
+  	  });
+
+   // add drop shadow effect and hover style
+   var shadowFilter = new OM.visualfilter.DropShadow({opacity:0.5, color:"#000000", offset:6, radius:10});
+ //  layer2.setVisualFilter(shadowFilter);
+
+   var hoverStyle = new OM.style.Color(
+        {stroke:"#FFFFFF", strokeThickness:2});
+// remove fill so that the thematic fill is preserved when on hover
+//                   {fill:"#D95F0E", stroke:"#EFA95B", strokeThickness:1});
+
+   layer2.setHoverStyle(hoverStyle);
+   layer2.setHoverVisualFilter(shadowFilter);
+
+   layer2.enableFeatureHover(true);
+
+   /*
+   var selectStyle = new OM.style.ColorStyle({fill:"#ffcc99",stroke:"#ffd8ae"});
+   layer2.setSelectStyle(selectStyle);
+   layer2.enableFeatureSelection(true);
+
+   */
+
+   layer2.enableFeatureSelection(false);
+   layer2.setLabelsVisible(true);
+ 
+// override rendering style with programmatic one
+
+   var theRenderingStyle = 
+     createBucketColorStyle('YlBr5', colorSeries, 'States5', bucketRanges, true);
+
+   layer2.setRenderingStyle(theRenderingStyle);
+  
+   currentPalette = "YlBr5";
+
+   var stLayerIdx =   map.addLayer(layer2);
+   //alert('State Layer Idx = ' + stLayerIdx);
+
+    map.setMapCenter(mpoint);
+  
+   map.setMapZoomLevel(mapZoom) ;
+   
+   //map.hideOverviewMap();
+   map.init() ;
+
+   statesLayer=layer2;
+
+   // add rt-click event listener
+   layer2.addListener(OM.event.MouseEvent.MOUSE_RIGHT_CLICK,stateRtClick);
+   } // end if 
+
+} // end states
+
+function counties(){
+     if(countiesLayer) 
+     { 
+       if(statesLayer) 
+         statesLayer.setVisible(false);
+       countiesLayer.setVisible(true);
+     }
+     else 
+     {
+        var layer3 = new OM.layer.VectorLayer("vLayer3", 
+        {
+          def:
+          {
+      	  type:OM.layer.VectorLayer.TYPE_PREDEFINED, 
+       	  dataSource:"mvdemo", theme:"counties_32775_totpop", 
+        	  url: baseURL,
+       	  loadOnDemand: false
+  	    },
+		boundingTheme:false
+  	  });
+
+   // add drop shadow effect 
+   var shadowFilter = new OM.visualfilter.DropShadow(
+                      {opacity:0.5, color:"#000000", offset:6, radius:10});
+   //layer3.setVisualFilter(shadowFilter);
+
+   var hoverStyle = new OM.style.Color(
+        {stroke:"#FFFFFF", strokeThickness:2});
+// remove fill so that the thematic fill is preserved when on hover
+//                   {fill:"#D95F0E", stroke:"#EFA95B", strokeThickness:1});
+
+  // layer3.setHoverStyle(hoverStyle);
+   //layer3.setHoverVisualFilter(shadowFilter);
+
+  // layer3.enableFeatureHover(true);
+   
+   layer3.enableFeatureSelection(false);
+
+// override rendering style with programmatic one
+    var theDDdata = $('#demo-htmlselect').data('ddslick');
+       
+   var theRenderingStyle = 
+         createBucketColorStyle(theDDdata.selectedData.value, colorSeries, 'Counties5', bucketRanges, false);
+
+//currentStyle = theRenderingStyle;
+
+   layer3.setRenderingStyle(theRenderingStyle);
+
+   map.addLayer(layer3);
+   countiesLayer=layer3;
+   } // end else 
+   layerName="Counties";
+   
+   // render the states layer on top with just a white line 
+   var stateOutlineStyle =  new OM.style.Line(
+        {stroke:"#FFFFFF", strokeThickness:3});
+   if(statesLayer) 
+   {
+     statesLayer.setRenderingStyle(stateOutlineStyle);
+     statesLayer.bringToTop();
+     statesLayer.setVisible(true);
+   };
+} // end counties
+
+function setStyle(styleName) 
+{
+  // alert("Selected Style = " + styleName);
+
+  var newRenderingStyle = null; 
+  if (layerName === "States") 
+  {
+    if(/3/.test(styleName)) 
+    {
+     newRenderingStyle = 
+     createBucketColorStyle(styleName, colorSeries, 'States3', bucketRanges, false);
+	 currentStyle = 
+	 createBucketColorStyle(styleName, colorSeries, 'Counties3', bucketRanges, false);
+    }
+    else 
+    {
+     newRenderingStyle = 
+     createBucketColorStyle(styleName, colorSeries, 'States5', bucketRanges, false);
+	 currentStyle = 
+	 createBucketColorStyle(styleName, colorSeries, 'Counties5', bucketRanges, false);
+    }   
+    statesLayer.setRenderingStyle(newRenderingStyle);
+	if (stateCountyLayer)
+	 stateCountyLayer.setRenderingStyle(currentStyle, ["TOTPOP"]);
+  }
+  else if (layerName === "Counties")
+  {
+    if(/3/.test(styleName)) 
+    {
+     newRenderingStyle = 
+     createBucketColorStyle(styleName, colorSeries, 'Counties3', bucketRanges, false);
+    }
+    else 
+    {
+     newRenderingStyle = 
+     createBucketColorStyle(styleName, colorSeries, 'Counties5', bucketRanges, false);
+    }   
+
+    countiesLayer.setRenderingStyle(newRenderingStyle);
+    //currentStyle = newRenderingStyle;
+  }
+} // end setStyle
+
+function stateRtClick(evt){
+  var foi = evt.feature;
+  //alert('Rt-Click on State: ' + foi.attributes['_label_'] + 
+  //      ' with pop ' + foi.attributes['TOTPOP']);
+
+  // display another layer with counties info 
+
+  // layer may change on each rt-click so create and add each time.
+  var countyByState = null ;
+  var sqlText =
+"select totpop,geom32775 from counties_32775_moved where state_abrv="+
+      "'"+foi.getAttributeValue('_label_')+"'";
+
+
+// alert(sqlText);
+
+  if (currentStyle === null)
+    currentStyle = 
+     createBucketColorStyle('YlBr5', colorSeries, 'Counties5', bucketRanges, false);
+  /* try a simple style instead   
+    new OM.style.ColorStyle(
+		   {
+                      stroke: "#B8F4FF",
+		      fill: "#18E5F4",
+                      fillOpacity:0
+	           }
+     );
+   */
+  // remove existing layer 
+  if(stateCountyLayer) 
+    map.removeLayer(stateCountyLayer);
+
+  countyByState = new OM.layer.VectorLayer("stCountyLayer", 
+                  {def:{type:OM.layer.VectorLayer.TYPE_JDBC,
+                   dataSource:"mvdemo",
+                   sql:sqlText,
+                   url:baseURL}});			   
+//                   url:baseURL},
+//                   renderingStyle:currentStyle});
+
+  countyByState.setVisible(true);
+  countyByState.setRenderingStyle(currentStyle, ["TOTPOP"]);
+
+   var ctLayerIdx =   map.addLayer(countyByState);
+   // alert('County Layer Idx = ' + ctLayerIdx);
+
+  //map.addLayer(countyByState);
+  stateCountyLayer = countyByState;
+} // end stateRtClick
+
+function displaySelectedData(ddData)
+{
+   // if only testing ddslick by itself then alert else do required tasks
+   if(map) 
+   {
+      // code to update renderStyle goes here
+	  //alert('will try to change render style');
+	  setStyle(ddData.selectedData.value);
+   }
+   else
+   {
+    // do nothing 
+   }
+}
+
+</script>
+</head>
+
+<body bgcolor="#b4c5cc" style="height:100%;font-family:Arial,Helvetica,Verdana">
+
+<h3 align="center">State, county population by N-tile </h3>
+<div id="demo" style="position:absolute; left:68%; top:44px; width:28%; height:100%">
+<HR/>
+<p/>
+Choose Color Palette:
+<select id="demo-htmlselect">
+<!--
+<option value="YlBl3" 
+data-imagesrc="mh10_3.png">
+YlBl3</option>
+<option value="YlBr3" 
+data-imagesrc="mh11_3.png">
+YlBr3</option>
+<option value="YlBl5" 
+data-imagesrc="mh10_5.png">
+YlBl5</option>
+<option value="YlBr5" selected="selected" 
+data-imagesrc="mh11_5.png">
+YlBr5</option>
+-->
+<option value="YlBl3">
+YellowBlue3</option>
+<option value="YlBr3">
+YellowBrown3</option>
+<option value="YlBl5">
+YellowBlue5</option>
+<option value="YlBr5" selected="selected">
+YellowBrown5</option>
+<option value="Blues5">
+Blues</option>
+<option value="Greens5">
+Greens</option>
+<option value="Greys5">
+Greys</option>
+<option value="Oranges5">
+Oranges</option>
+<option value="Purples5">
+Purples</option>
+<option value="Reds5">
+Reds</option>
+</select>
+<p/>
+<table>
+    <tr> <td>
+    <input name="1" type="radio" checked="checked" onclick="states()" id="1">States
+    </td></tr>
+    <tr><td>
+    <input name="1" type="radio" onclick="counties()" id="2">Counties from external source (e.g. database)
+    </td></tr>
+</table>
+
+</div>
+<div id="map" style="position:absolute; left:10px; top:50px; width:65%; height:75%; background-color:#778f99"></div>
+<div style="position:absolute;top:85%; left:10px;width:98%" class="noprint">
+<HR/>
+<p> Note: This demo uses HTML5 and requires IE9+, Firefox 10+, or Chrome. No map will show up in IE8 or earlier.
+</p>
+</div>
+</body>
+</html>
+

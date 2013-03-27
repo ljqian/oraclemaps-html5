@@ -1,0 +1,223 @@
+<!--
+To change this template, choose Tools | Templates
+and open the template in the editor.
+-->
+<!DOCTYPE html>
+<html>
+  <head>
+    <title></title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <script src="/mvdemo/gv.js" type="text/javascript"></script>
+    <script>
+       document.write('<'+'script src="'+MV.gv.mapviewer_baseURL+'/jslib/v2/oraclemapsv2.js"'+' type="text/javascript"><'+'/script>');
+    </script>
+    <script language="JavaScript" type="text/javascript">
+      OM.gv.proxyEnabled =false;
+      OM.gv.setResourcePath(MV.gv.mapviewer_baseURL+"/jslib/v2/images/");  
+      var map = null;
+      var airportsLayer = null;
+      var connectionsLayer = null;
+      var nearestAirport = null;
+      var nearestFeature = null;
+      var connectionsData = null;
+      
+      $(document).ready(function()
+      {
+        loadConnectionsData();
+        
+        var baseURL  = MV.gv.mapviewer_baseURL;
+        var center = new OM.geometry.Point(-100,36,8307); 
+        map = new OM.Map(document.getElementById('map'),
+        {mapviewerURL: baseURL}) ;
+        
+        map.addListener(OM.event.MouseEvent.MOUSE_MOVE, onMouseMove);
+        
+        var tilelayer = new OM.layer.ElocationTileLayer("oracle.maps");
+        map.addLayer(tilelayer) ;  
+        
+        var states = new OM.layer.VectorLayer("states", {
+          def:{
+            type:OM.layer.VectorLayer.TYPE_PREDEFINED,
+            dataSource:"mvdemo",
+            theme:"theme_demo_states"
+          }
+        });
+        map.addLayer(states);
+        
+        airportsLayer = new OM.layer.VectorLayer("airports", 
+        {
+          def:{
+            type:OM.layer.VectorLayer.TYPE_DATAPACK, //TYPE_JDBC
+            dataPackUrl:"us_airports.json"
+          }
+        });   
+        airportsLayer.setLabelsVisible(false);
+        airportsLayer.setBringToTopOnMouseOver(false);
+        setupAirportStyles(airportsLayer);
+        var pulse = new OM.style.PulseAnimation({
+            stroke: "#336699",
+            duration: 1,
+            beginSize: 8,
+            endSize: 50,
+            repeatCount:3
+        });
+        airportsLayer.enableFeatureSelection(true);
+        airportsLayer.setSelectStyle(pulse);
+        map.addLayer(airportsLayer) ;
+        map.setMapCenter( center );
+        map.setMapZoomLevel(4) ;
+        map.init() ;
+      });
+
+      function loadConnectionsData()
+      {
+        $.getJSON('connections.json', function(data) {          
+            connectionsData = [];
+            $.each(data, function(key, val){connectionsData = val;});
+            if(console)
+              console.log("connections data loaded.");
+        });
+      }
+      
+      function setupAirportStyles(layer)
+      {
+        var circles = [];
+        for(var i=0; i<10; i++)
+        {
+          circles[i] =  new OM.style.Marker({
+            vectorDef : [{
+                shape: { type:"circle", cx:5, cy:5, width:10, height:10 }, 
+                style: {
+                  fill:"#AFB6BD", 
+                  stroke:"#6784A3"
+                }
+              }],
+            width: 7 + i*3,
+            height:7 + i*3
+          });
+        }
+        
+        var bucketStyle = new OM.style.BucketStyle(
+        {
+          styles: circles,
+          numClasses:10, 
+          classification:'equal',  //creates equal-ranged buckets
+          defaultStyle: circles[0]
+        });
+        
+        layer.setRenderingStyle(bucketStyle, ["OUTBOUND"]);
+        
+      }
+      
+      /**
+       * Finds the nearest airport from the mouse pointer, and displays all
+       * the outbound connections.
+       */
+      function onMouseMove(evt)
+      {
+        var x = map.getCursorLocation().getX();
+        var y = map.getCursorLocation().getY();
+        var nearestAp = null, minDist = -1;
+        //get all airports locations currently displayed
+        var features = airportsLayer.getAllFeatures(), geom = null;
+        if(!features || features.length==0)
+          return;
+
+        var len = features.length;
+        var fx, fy, dist;
+        for(var i=0; i<len; i++)
+        {
+          geom = features[i].getGeometry();
+          fx = geom.getX();
+          fy = geom.getY();
+          dist = (x-fx)*(x-fx) + (y-fy)*(y-fy);
+          if(minDist<0 || minDist > dist)
+          {
+            minDist = dist;
+            nearestAp = features[i];
+          }
+        }
+        displayOutboundConnections(nearestAp);
+      }
+      
+      /**
+       * this function animates the nearest airport, and all the
+       * direct connection lines to its destinations.
+       */
+      function displayOutboundConnections(newNearest)
+      {
+        //same nearest airport; do nothing
+        if(nearestAirport!=null && nearestAirport == newNearest)
+          return;
+        
+        nearestAirport = newNearest;
+        airportsLayer.selectFeature(nearestAirport);
+        
+        //remove currently displayed connections
+        if(connectionsLayer)
+          map.removeLayer(connectionsLayer);
+        
+        if(!connectionsData)
+        {  
+          return;
+        }
+          
+        var ox = nearestAirport.getGeometry().getX(), 
+            oy = nearestAirport.getGeometry().getY();
+            
+        connectionsLayer = new OM.layer.VectorLayer("connections",{def:{type:OM.layer.VectorLayer.TYPE_LOCAL}});
+        var lineStyle = new OM.style.Line({strokeThickness:1, stroke:"#808080"});
+        
+        var dests = findDestinations(nearestAirport);
+        
+        document.getElementById("text").innerHTML= "Airport:  <b>"+  nearestAirport.getAttributes()["NAME"] +"</b>, Outbound direct flights: "+ dests.length;
+
+        for (var i=0; i<dests.length; i++)
+        {
+          var ap = airportsLayer.getFeature(dests[i]);
+          if (!ap)
+            continue;
+          var dx = ap.getGeometry().getX(),
+              dy = ap.getGeometry().getY();
+		 
+		  var oPoint = new OM.geometry.Point(ox,oy,54004);
+		  var dPoint = new OM.geometry.Point(dx,dy,54004);
+			  
+          var oPoint_8307 = oPoint.transform(8307);
+		  var dPoint_8307 = dPoint.transform(8307);
+          	  
+		  var line = OM.util.GeomUtil.createGreatCircle(oPoint_8307,dPoint_8307);
+		 
+		  //var line = new OM.geometry.LineString([ox, oy, dx, dy], 54004);  //elocation uses SRID 54004
+          var lineFeature = new OM.Feature("to: "+dests[i], line,{renderingStyle:lineStyle}); 
+          connectionsLayer.addFeature(lineFeature);
+        }
+        
+        map.addLayer(connectionsLayer);
+      }
+      
+      //given the name of the Origin airport, find all airports with direct
+      //outbound connections
+      function findDestinations(airport)
+      {
+        var code = airport.id; //id attribute is automatically populated to be the keyColumn specified in the layer definition.
+        var destinations = [], len = connectionsData.length, item;
+        
+        for(var i=0; i<len; i++)
+        {
+          item = connectionsData[i];
+          if(item.origin === code)
+            destinations.push(item.destination);
+        }
+        console.log("found connections: "+ destinations.length);
+        return destinations;
+      }
+      
+      
+    </script>    
+  </head>
+  <body>
+    <DIV id="map" style="width:99%;height:94%"></DIV>
+    <span id="text">Nearest airport: </span>
+  </body>
+</html>
